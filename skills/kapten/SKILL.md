@@ -1,41 +1,40 @@
 ---
 name: kapten
-description: Explains Kapten's resource model and operates Kapten through its CLI. Use when reasoning about Kapten organizations, projects, environments, clusters, components, applications, jobs, databases, or pipelines, or when inspecting or changing Kapten resources.
-compatibility: Requires the kapten CLI for live resource operations; authentication and network access may be required.
+description: Operates Kapten through the kapten CLI and its MCP server, and explains Kapten's resource model. Use when deploying or inspecting Kapten projects, environments, clusters, applications, jobs, databases or pipelines, logging in to Kapten, running Kapten from CI, or connecting an agent to Kapten.
+compatibility: Live operations need the kapten CLI, network access to Kapten and a login or OAuth application credentials. Conceptual questions need neither.
 ---
 
 # Kapten
 
-Use Kapten's domain hierarchy to choose the right resource, then let the installed CLI describe its current command surface and schemas.
+Kapten deploys applications, jobs and databases to Kubernetes clusters in the user's own cloud account. Use its resource hierarchy to pick the right resource, then let the installed CLI describe its current commands and schemas.
 
-## Choose the relevant context
+## Pick the reference
 
-- Read [the concept model](references/concepts.md) when the task involves resource ownership, hierarchy, deployment, runs, authorization scope, or translating the user's intent into Kapten resources.
-- Read [the CLI workflow](references/cli.md) before executing, composing, or troubleshooting `kapten` commands.
-- For a conceptual question that does not require live state, answer from the concept model without requiring CLI access.
+- [Authentication and contexts](references/auth.md): before the first live command, when a command fails with 401, when running from CI or a container, or when targeting staging or a local Kapten.
+- [CLI workflow](references/cli.md): before composing, running or troubleshooting `kapten` commands.
+- [MCP server](references/mcp.md): when the user wants an agent connected to Kapten through MCP rather than shell commands.
+- [Concept model](references/concepts.md): when choosing a resource, explaining how resources relate, or planning a change across the hierarchy.
+
+If `kapten` is not installed, install it with `brew install --cask kapten-io/tap/kapten`, `mise use -g packslip:github.com/kapten-io/cli` or `npm install -g @kapten/cli`, or run it without installing with `npx -y @kapten/cli`. Every command is also documented at https://docs.kapten.io/cli/reference.md.
+
+For product questions that need no live state (features, pricing, guides), read the docs at https://docs.kapten.io: append `.md` to any page URL, or start from https://docs.kapten.io/llms.txt. The API reference is at https://docs.kapten.io/api.
 
 ## Operate through discovery
 
-Do not rely on a memorized operation list: the CLI is generated from Kapten's evolving OpenAPI contract.
+The CLI is generated from Kapten's OpenAPI contract and changes with it. Do not rely on a memorized command list.
 
-1. Run `kapten --help` to discover current resource groups and global controls.
-2. Run `kapten <group> --help` to discover that group's operations.
-3. Run `kapten <group> <operation> --help` before composing a request. Treat its positional arguments, examples, request schema, required fields, enums, and response schema as authoritative.
-4. Resolve required parent and resource IDs from live list/get output; do not substitute names where help requires IDs.
-5. Execute with the intended context. Prefer `-o json` when subsequent reasoning or shell processing depends on exact fields.
-6. After a mutation, verify the resulting resource with a read command discovered through help. Report the affected resource name and ID.
+1. Check who commands run as: `kapten whoami`.
+2. `kapten --help` lists resource groups; `kapten <group> --help` lists operations.
+3. `kapten <group> <operation> --help` shows positional arguments, an input example, the request schema with required fields marked `*`, enums and the response schema. Treat it as authoritative.
+4. Resolve parent and resource IDs from live `list`/`get` output with `-o json`. IDs are UUIDs; never substitute names.
+5. Run the operation, then verify the result with a read command and report the resource's name and ID.
 
-When the user has explicitly requested a state change, carry it through discovery, execution, and verification. Do not stop merely because the exact operation was not known before inspecting help.
+When the user asked for a change, carry it through discovery, execution and verification. Do not stop because the exact operation was unknown before reading help.
 
 ## Guardrails
 
-- Confirm the active organization/context and target hierarchy before changing or deleting resources. A Kapten context selects an identity, organization, and API endpoint; it is not a Project or Environment.
-- Follow the live request schema rather than guessing body fields. Quote inline bodies so the shell does not expand punctuation or wildcards.
-- Use default human output for interactive explanation and explicit JSON for automation. Do not scrape decorative tables when JSON is available.
-- Treat authorization failures as server decisions. Do not work around them by changing identifiers or contexts unless the user requested that context.
-- Never expose access, refresh, or identity tokens. The CLI manages credentials; use its auth commands rather than extracting its credential store.
-- For unexpected HTTP behavior, reproduce once with verbose output and diagnose from status, response body, target URL, and context. Do not leave verbose headers enabled by default.
-
-## Completion
-
-A live operation is complete when the command succeeds, its result is verified through a discovered read path, and the response belongs to the intended organization hierarchy. If it fails, report the command shape, context name (never tokens), HTTP status or transport error, and the next actionable correction.
+- Confirm the organization (`kapten whoami`) and the target project and environment before creating, deploying, updating or deleting.
+- Ask before deleting anything or deploying to a production environment, unless the user already asked for exactly that.
+- Build request bodies only from the operation's request schema. Each component kind and database engine has its own schema.
+- Never print, copy or read access tokens, refresh tokens, client secrets or the credential store. Use the CLI's auth commands.
+- Treat 403 as the server's decision. Do not retry with another context or identity the user did not choose.

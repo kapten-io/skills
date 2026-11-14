@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "kapten",
+  "description": "Operate Kapten from coding agents: the kapten and kapten-docs skills, the Kapten MCP server (kapten mcp serve) and the docs MCP server.",
+  "author": {
+    "name": "Kapten",
+    "url": "https://kapten.io"
+  },
+  "homepage": "https://docs.kapten.io/cli/mcp",
+  "repository": "https://github.com/kapten-io/skills",
+  "license": "Apache-2.0",
+  "keywords": [
+    "kapten",
+    "kubernetes",
+    "deployment",
+    "paas",
+    "mcp"
+  ],
+  "version": "0.1.2"
+}

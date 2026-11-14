@@ -1,72 +1,56 @@
-# Kapten concept model
+# Concept model
 
-Read this reference when identifying a Kapten resource, explaining how resources relate, or planning a change across the hierarchy.
+Read this when choosing a resource, explaining how resources relate, or planning a change across the hierarchy. Each section links the product docs page that holds the details; read it before answering detailed questions.
 
-## Resource hierarchy
+## Hierarchy
 
 ```text
 Organization
 ├── Clusters
-├── Integrations and organization settings
+├── Members, roles and integrations
 └── Projects
-    └── Environments ── targets one Cluster
-        ├── Components
-        │   ├── Applications
-        │   ├── Jobs
-        │   └── Databases
-        └── Pipelines
-            └── ordered Stages
-                └── references to Components
+    └── Environments ── each runs on one Cluster
+        ├── Components: Applications, Jobs, Databases
+        ├── Variables and secrets
+        └── Pipelines ── ordered Stages of Components
 ```
 
-Most CLI commands below the Organization require parent IDs as well as the target resource ID. Preserve the hierarchy shown by command help instead of treating IDs as globally interchangeable.
+IDs are not interchangeable across levels: commands below the organization take the parent IDs as well as the target ID.
 
 ## Organization
 
-An **Organization** is the tenant, membership, and top-level authorization boundary. Projects, Clusters, and Integrations belong to one Organization. OAuth login binds a CLI context to the Organization that was active during login; the Engine derives tenant authority from that authenticated context.
-
-A local **CLI context** is not a platform resource. It records an identity, Organization, issuer, API endpoint, and credential reference so one user can switch safely between Organizations or installations.
-
-## Project
-
-A **Project** is an Organization-owned container for related Environments. Use it to group one product or workload across deployment boundaries. An Environment belongs to exactly one Project.
-
-Project scope is significant for authorization and navigation. A Project can be deleted only when it has no child Environments; deleting it is not a cascade operation.
+The tenant and the top-level authorization boundary. Clusters, projects and integrations belong to one organization; members and OAuth applications get roles that decide what they can see and change. A CLI context is bound to the organization chosen at login. Details: https://docs.kapten.io/concepts/organizations-and-roles.md
 
 ## Cluster
 
-A **Cluster** is an Organization-owned compute target registered with Kapten. Environments reference a Cluster; workloads reach a Cluster through their Environment rather than owning cluster placement independently.
+A Kubernetes cluster in the user's cloud account, connected with its kubeconfig; Kapten installs its agent on it. Its status tells whether it accepts deployments. Environments run on a cluster; workloads never pick a cluster directly. Details: https://docs.kapten.io/concepts/clusters.md
 
-Cluster access is separate from Project and Environment access. Seeing a Project does not imply permission to inspect every Cluster in the Organization.
+## Project
+
+Groups the services that ship together across their environments. A project can be deleted only once it has no environments. Details: https://docs.kapten.io/concepts/projects.md
 
 ## Environment
 
-An **Environment** is the deployment boundary inside a Project. It targets one Cluster, has a type such as development, staging, or production, and owns Components and Pipelines.
+One deployment of a project (for example staging or production) on one cluster, with its own components, variables and pipelines, billed per minute while it exists. It is the authorization boundary for its contents, and it can be deleted only once empty. Details: https://docs.kapten.io/concepts/environments.md and https://docs.kapten.io/concepts/billing.md
 
-Environment authorization governs its contents. Components are not independent authorization boundaries. An Environment can be deleted only after its contained resources are removed.
+## Components
 
-## Component
+What runs in an environment:
 
-A **Component** is the common inventory and lifecycle abstraction for a deployable workload in an Environment. The API may expose component kinds such as `KApplication`, `Kjob`, `KDatabase`, or `KHelm`; user-facing commands normally use resource-specific terms.
+- **Application**: a long-running service built from a GitHub repository or pulled from a container image, with resources, ports, health checks, storage and scaling.
+- **Job**: a container that runs to completion, once or on a cron schedule.
+- **Database**: a database engine run by Kapten. The engines and the operations available on them (deploy, backups, restores, upgrades, maintenance) depend on the installed CLI: read `kapten databases --help`.
 
-A component's configuration and current resource state are distinct from its run history:
+A component's configuration is separate from its runs: each deploy or execution is a **run** with a status, timing and logs. `last_run_status` is the latest attempt, not the latest success. Query logs per run. Details: https://docs.kapten.io/concepts/components.md
 
-- **Application**: a long-running workload built from a container image or source repository, with runtime resources, ports, health checks, storage, and scaling settings.
-- **Job**: a finite container workload, either one-time or scheduled, with execution limits and restart behavior.
-- **Database**: a PostgreSQL, MySQL, MongoDB, or Redis service. Provisioning can be in-cluster or managed, depending on engine and configuration.
+## Variables and secrets
+
+Environment variables and files set on a project, an environment or one component. A change takes effect at the component's next deployment. A secret's value can be replaced but never read back. Creating a database adds its credentials to the environment as `KAPTEN_DATABASE_<NAME>_*` secrets managed by Kapten. Details: https://docs.kapten.io/concepts/variables-and-secrets.md
 
 ## Pipeline
 
-A **Pipeline** is an Environment-owned orchestration definition. It contains ordered Stages; each Stage selects Components and defines failure behavior. A Pipeline Run is the aggregate execution record, while its component actions produce Component Runs.
+Deploys several components of an environment in ordered stages, in parallel within a stage, and stops or continues when a stage fails. A pipeline run aggregates the component runs it started. Editing a pipeline changes future runs only. Details: https://docs.kapten.io/concepts/pipelines.md
 
-Do not confuse a Pipeline definition with a Pipeline Run. Editing stages changes future orchestration; inspecting a run describes one past or current execution.
+## Authorization
 
-## Runs and logs
-
-A **Component Run** is one attempted component action, including an action initiated by a Pipeline. It carries status, timing, trigger, and failure information. The component's `last_run_id` and `last_run_status` point to the latest attempted action, not necessarily the latest successful one.
-
-A **Pipeline Run** aggregates the execution of one Pipeline and its Stage runs. Run-scoped logs and timeline information should be queried with the run ID so events are attributed to the correct attempt.
-
-## Authorization implications
-
-Kapten evaluates permissions server-side against the active Organization and resource hierarchy. Membership alone does not imply every operation. Parent visibility can be derived from access to a child without granting sibling or parent mutation rights. Treat a successful list as the caller's authorized view, not a complete Organization inventory.
+The server checks every request against the identity's roles in the organization and the resource hierarchy. A list returns what the caller may see, not the whole organization.

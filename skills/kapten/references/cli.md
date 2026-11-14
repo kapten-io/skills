@@ -1,99 +1,77 @@
-# Kapten CLI workflow
+# CLI workflow
 
-Read this reference before running, composing, or diagnosing `kapten` commands.
+Read this before composing, running or diagnosing `kapten` commands.
 
 ## Discover before composing
 
-The installed CLI embeds an OpenAPI contract. Its help is the source of truth for the installed version; do not copy an operation catalog into plans or scripts.
+The binary embeds the API contract of its version. Its help is the source of truth:
 
 ```bash
-kapten --help
-kapten <group> --help
-kapten <group> <operation> --help
+kapten --help                       # resource groups and global flags
+kapten <group> --help               # operations of a group
+kapten <group> <operation> --help   # arguments, input example, request and response schemas
+kapten <group> --help-all           # also the embedded runtime's inherited flags
 ```
 
-Use each level for a different decision:
+If an expected command is absent, say the installed CLI does not expose it; do not build HTTP requests by hand from API conventions. `kapten --version` tells which CLI is installed.
 
-- Root help shows current resource groups, global flags, and representative examples.
-- Group help shows current operations in that group.
-- Operation help shows positional arguments, an input example, the request schema, required fields marked with `*`, field descriptions and enums, response schemas, and operation-specific flags.
-- Add `--help-all` when ordinary help hides inherited Restish controls.
-
-If a command you expected is absent, do not synthesize it from API conventions. Report that it is not exposed by the installed CLI or inspect adjacent groups through help.
-
-## Select authentication context
-
-Inspect contexts before acting when the target Organization is not already clear:
-
-```bash
-kapten auth list
-```
-
-Use the active context by default. Use `--context <name>` for one command when the user identifies another existing context. Use the CLI's `auth login`, `auth use`, and `auth logout` help when authentication state must change.
-
-An OAuth discovery error points to the issuer; a connection-refused API request points to the API endpoint or service. They are different paths even when one context stores both.
+Some groups have one operation per kind rather than a generic one. Databases have one create, get and update per engine (`kapten databases create-postgresql`, `get-mysql`, …): read the group's help for the engines and the database operations (deploy, runs, logs, and others the API exposes) of the installed version.
 
 ## Resolve the hierarchy
 
-Start at the nearest known parent and list downward. Capture IDs from JSON when another command needs them:
+Start from the nearest known parent and list downward. Usage lines give the argument order; most commands under an environment need the project ID and the environment ID before the resource ID:
 
 ```bash
-kapten <parent-group> list -o json
+kapten projects list -o json
+kapten environments list <project-id> -o json
+kapten components list <project-id> <environment-id> -o json
 ```
-
-Read the operation's usage line to preserve argument order. Environment and component-family commands commonly need Project and Environment IDs before the resource ID. Do not assume an ID alone is sufficient.
 
 ## Build request bodies from help
 
-Before create or update:
+Pass the fields as one quoted shorthand argument, or as JSON on stdin for larger bodies:
 
 ```bash
-kapten <group> <operation> --help
+kapten projects create 'name: storefront, description: "Web store"'
+jq -n '{name: "storefront", description: "Web store"}' | kapten projects create
 ```
 
-Build only fields accepted by the displayed request schema. Supply every required field, preserve enum spelling and units, and use the displayed example as a shape rather than blindly copying its placeholder values.
+In shorthand, nested fields use dots (`parent.child: value`), `list[]: value` appends, and unquoted numbers and booleans are typed: quote a value to keep it a string (`port: "8080"`). Shorthand after a piped document overrides its fields.
 
-For a small body, pass one quoted JSON or compact YAML-style argument following the help example. For a large or generated body, prefer JSON on stdin. If operation help exposes request validation, use it before a consequential mutation.
+- `--rsh-generate-body` prints an example body with every field and sends nothing.
+- `--rsh-validate` checks the body against the schema before sending it.
 
-Never guess schema fields from a similar resource: Application, Job, and each Database engine have different configuration unions and requirements.
+Supply every required field (`*`), keep enum spellings and units, and replace every placeholder value. Details: https://docs.kapten.io/cli/request-bodies.md
 
-## Choose output deliberately
+## Output
 
-Default output is designed for humans: list pagination is unwrapped into tables, useful columns are prioritized, and ordinary responses omit HTTP headers.
-
-Use JSON whenever exact structure matters:
-
-```bash
-kapten <group> <operation> ... -o json
-```
-
-This is the preferred mode for `jq`, scripts, comparisons, and capturing IDs. Keep error output intact when reporting a failure; the default formatter includes the public API message and HTTP status.
-
-For protocol diagnosis, add `-v` to show request/response headers. Add `-vv` only when TLS details are relevant. Headers can contain operational metadata, so include only the necessary diagnosis in the final report and never expose authorization values.
+- The default output is for people: tables for lists, no HTTP headers.
+- `-o json` prints the API's response, pagination included. Use it to capture IDs, with `jq`, and whenever exact fields matter.
+- `-f '<jq expression>'` keeps part of the response, which sits under `.body`: `kapten projects list -f '.body.records[].id'`.
+- Lists return one page: `--page-limit` and `--page-number` move through them.
+- Errors print one line on stderr with the HTTP status and exit with status 1; with `-o json` the error document goes to stdout.
+- `-v` adds request and response headers, `-vv` TLS details. Use them once to diagnose, and never quote authorization headers.
 
 ## Mutate and verify
 
-For create, update, or delete:
+1. Confirm the context (`kapten whoami`) and the parent hierarchy.
+2. Read the operation's help and build the body from its schema.
+3. Run the mutation and capture the returned ID.
+4. Read the resource back (`get`, or `list` for deletions) and check the state. A deployment is an asynchronous run: follow it with the group's `get-run`, `list-runs` and `query-run-logs` operations until it succeeds or fails.
 
-1. Confirm the selected context and parent hierarchy.
-2. Read operation help and construct the request from its schema.
-3. Execute the requested mutation.
-4. Capture the returned ID, or retain the target ID for deletion.
-5. Discover and run the corresponding get/list path to verify resulting state. After deletion, verify absence or the API's documented deleted state.
-
-Do not treat a zero exit alone as sufficient when a follow-up read is available.
+A zero exit status alone is not verification.
 
 ## Diagnose failures
 
-Keep failures at the layer where they occurred:
+- Discovery or connection error naming the issuer: the auth URL of the context is wrong or unreachable.
+- Connection refused or DNS error naming the API URL: the API URL of the context is wrong or unreachable.
+- `400`: the arguments or body do not match the schema; reread the operation's help (IDs must be UUIDs).
+- `401`: the login ended; see [authentication](auth.md).
+- `403`: the identity's role does not allow this in this organization, project or environment.
+- `404`: recheck argument order, parent IDs and the target ID, and the context's organization.
+- `409`: read the conflict in the response (for example, a project that still has environments) and agree on a correction with the user.
+- `5xx`: retry once if the operation is safe to repeat, then report.
 
-- Discovery failure: inspect the configured issuer and its advertised OAuth endpoints.
-- Authentication failure: inspect context selection and login/refresh state without reading raw credential files.
-- Connection refused or DNS failure: inspect the API endpoint and service reachability.
-- `401`: refresh/login may be required; do not substitute another identity silently.
-- `403`: the server denied the operation in this Organization/resource scope.
-- `404`: recheck endpoint version, argument order, parent IDs, and target ID.
-- `409`: inspect the domain conflict in the response and choose a user-approved correction.
-- `5xx`: retry only when safe, then use `-v` to capture the request target and response status for diagnosis.
+Details: https://docs.kapten.io/cli/output.md
 
-When reporting a failure, include the command shape with sensitive values omitted, context name, HTTP status or transport error, and the next concrete action.
+Report failures with the command shape (no secrets), the context name, the HTTP status or transport error, and the next action.
